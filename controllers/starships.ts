@@ -1,5 +1,10 @@
 import { v4 } from 'https://deno.land/std/uuid/mod.ts'
+import { Client } from 'https://deno.land/x/postgres/mod.ts'
+import { dbCreds } from '../config.ts'
 import { Starship } from '../types.ts'
+
+// Init client
+const client = new Client(dbCreds);
 
 let starships : Starship[] = [
   {
@@ -27,10 +32,37 @@ let starships : Starship[] = [
 
 // @desc    Get all starships
 // @routes    GET /api/starship
-const getStarships = ({ response }: { response: any }) => {
-  response.body = {
-    success: true,
-    data: starships
+const getStarships = async ({ response }: { response: any }) => {
+  try {
+    await client.connect()
+
+    const result = await client.query('SELECT * FROM starships')
+
+    const starships = new Array();
+
+    result.rows.map(s => {
+      let obj: any = new Object()
+
+      result.rowDescription.columns.map((el, i) => {
+        obj[el.name] = s[i]
+      })
+
+      starships.push(obj)
+    })
+
+    response.status = 200
+    response.body = {
+      success: true,
+      data: starships
+    }
+  } catch(err) {
+    response.status = 500
+    response.body = {
+      success: false,
+      message: err.toString()
+    }
+  } finally {
+    await client.end()
   }
 }
 
@@ -58,6 +90,7 @@ const getStarship = ({ params, response }: { params: {  id: string }, response: 
 // @routes    POST /api/starships
 const addStarship = async ({ request, response }: { request: any, response: any }) => {
   const body = await request.body();
+  const starship = body.value;
 
   if (!request.hasBody) {
     response.status = 400
@@ -66,15 +99,32 @@ const addStarship = async ({ request, response }: { request: any, response: any 
       message: 'No data'
     }
   } else {
-    const starship: Starship = body.value
-    starship.id = v4.generate()
-    starships.push(starship)
-    response.status = 201;
-    response.body = {
-      success: true,
-      data: starships
+    try {
+      await client.connect()
+
+      await client.query(`INSERT INTO starships(name,class,description,length')
+        VALUES($1,$2,$3,$4)`, 
+        starship.name, 
+        starship.class, 
+        starship.description, 
+        starship.length
+      )
+
+      response.status = 201
+      response.body = {
+        success: true,
+        data: starship
+      }
+    } catch (err) {
+      response.status = 500
+      response.body = {
+        success: false,
+        message: err.toString()
+      }
+    } finally {
+      await client.end()
     }
-  }
+  } 
 }
 
 // @desc    Update a starship
